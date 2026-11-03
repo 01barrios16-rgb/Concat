@@ -247,8 +247,7 @@ fn anthropic(
         ("anthropic-version", "2023-06-01"),
     ];
     let text = concat_host::net::post_json_text(&url, CONNECT, READ, &headers, &body.to_string())?;
-    let reply: Value =
-        serde_json::from_str(&text).map_err(|error| format!("not JSON: {error}"))?;
+    let reply: Value = serde_json::from_str(&text).map_err(|error| format!("not JSON: {error}"))?;
     anthropic_turn(&reply)
 }
 
@@ -328,7 +327,8 @@ fn anthropic_turn(reply: &Value) -> Result<Turn, String> {
                 if !turn.text.is_empty() {
                     turn.text.push('\n');
                 }
-                turn.text.push_str(block["text"].as_str().unwrap_or_default());
+                turn.text
+                    .push_str(block["text"].as_str().unwrap_or_default());
             }
             Some("tool_use") => turn.calls.push(Call {
                 id: block["id"].as_str().unwrap_or_default().to_owned(),
@@ -376,8 +376,7 @@ fn openai(
         vec![("authorization", bearer.as_str())]
     };
     let text = concat_host::net::post_json_text(&url, CONNECT, READ, &headers, &body.to_string())?;
-    let reply: Value =
-        serde_json::from_str(&text).map_err(|error| format!("not JSON: {error}"))?;
+    let reply: Value = serde_json::from_str(&text).map_err(|error| format!("not JSON: {error}"))?;
     openai_turn(&reply)
 }
 
@@ -448,8 +447,9 @@ fn openai_turn(reply: &Value) -> Result<Turn, String> {
         // itself.
         let arguments = match &function["arguments"] {
             Value::String(text) if text.trim().is_empty() => Value::Object(Map::new()),
-            Value::String(text) => serde_json::from_str(text)
-                .unwrap_or_else(|_| json!({ "_unparsed": text })),
+            Value::String(text) => {
+                serde_json::from_str(text).unwrap_or_else(|_| json!({ "_unparsed": text }))
+            }
             other => other.clone(),
         };
         let id = call["id"]
@@ -517,13 +517,31 @@ mod tests {
             Message::Assistant {
                 text: String::new(),
                 calls: vec![
-                    Call { id: "a".into(), name: "x".into(), arguments: json!({}) },
-                    Call { id: "b".into(), name: "y".into(), arguments: json!({}) },
+                    Call {
+                        id: "a".into(),
+                        name: "x".into(),
+                        arguments: json!({}),
+                    },
+                    Call {
+                        id: "b".into(),
+                        name: "y".into(),
+                        arguments: json!({}),
+                    },
                 ],
             },
             Message::Results(vec![
-                Outcome { id: "a".into(), name: "x".into(), content: "ok".into(), is_error: false },
-                Outcome { id: "b".into(), name: "y".into(), content: "ok".into(), is_error: false },
+                Outcome {
+                    id: "a".into(),
+                    name: "x".into(),
+                    content: "ok".into(),
+                    is_error: false,
+                },
+                Outcome {
+                    id: "b".into(),
+                    name: "y".into(),
+                    content: "ok".into(),
+                    is_error: false,
+                },
             ]),
         ];
         let wire = openai_messages(&messages);
@@ -538,7 +556,11 @@ mod tests {
             Message::User("cut it".into()),
             Message::Assistant {
                 text: String::new(),
-                calls: vec![Call { id: "a".into(), name: "x".into(), arguments: json!({}) }],
+                calls: vec![Call {
+                    id: "a".into(),
+                    name: "x".into(),
+                    arguments: json!({}),
+                }],
             },
             Message::Results(vec![Outcome {
                 id: "a".into(),

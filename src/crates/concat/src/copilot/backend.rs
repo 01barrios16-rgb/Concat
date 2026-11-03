@@ -66,8 +66,9 @@ impl Backend for Live {
             | Request::MediaProbe { .. }
             | Request::CatalogueList { .. }
             | Request::TemplateList) => match self.spare()?.dispatch(request) {
-                Response::Result(reply) => serde_json::to_value(&reply)
-                    .map_err(|error| ApiError::failed(format!("the reply did not encode: {error}"))),
+                Response::Result(reply) => serde_json::to_value(&reply).map_err(|error| {
+                    ApiError::failed(format!("the reply did not encode: {error}"))
+                }),
                 Response::Error(error) => Err(error),
             },
             _ => Err(ApiError::new(
@@ -117,8 +118,6 @@ fn on_window(
         Err(mpsc::RecvTimeoutError::Timeout) => {
             Err(ApiError::failed("the window took too long to answer"))
         }
-        Err(mpsc::RecvTimeoutError::Disconnected) => {
-            Err(ApiError::failed("the window has closed"))
-        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(ApiError::failed("the window has closed")),
     }
 }
