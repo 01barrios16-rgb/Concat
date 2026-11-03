@@ -1,0 +1,23 @@
+name: Build installers (Copilot fork)
+
+# This fork's own builds: every push to main, or a press of "Run workflow"
+# on the Actions page, builds the app for every desktop target through the
+# same build-app.yml the project releases with, and leaves the installers
+# as the run's artifacts (Concat-windows-x86_64 holds the Windows
+# setup.exe and .msi). Nothing is published as a release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/copilot-build.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: copilot-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-app.yml
+    secrets: inherit

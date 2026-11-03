@@ -190,6 +190,79 @@ pub fn get(
     }
 }
 
+/// A POST of `body` (JSON) to `url`, with `headers`, made the way [`get`]
+/// makes a GET: through the proxy the environment or the system names, and
+/// directly when the proxy cannot carry it. For the Copilot's calls to an
+/// AI provider, whose answers are JSON too. A status is an answer: its
+/// response, body and all, is in the failure's `error`.
+pub fn post_json(
+    url: &str,
+    connect: Duration,
+    read: Duration,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> Result<ureq::Response, Box<Failure>> {
+    let send = |route: Option<&Route>| {
+        let mut request = agent(route, connect, read, Trust::System)
+            .post(url)
+            .set("content-type", "application/json");
+        for (name, value) in headers {
+            request = request.set(name, value);
+        }
+        request.send_string(body).map_err(|error| {
+            let cause = classify(&error, route.is_some());
+            Box::new(Failure {
+                error,
+                cause,
+                proxy: route.map(|route| route.shown.clone()),
+            })
+        })
+    };
+    let Some(route) = crate::route::for_url(url) else {
+        return send(None);
+    };
+    let proxied = match send(Some(&route)) {
+        Ok(response) => return Ok(response),
+        Err(failure) if matches!(failure.error, ureq::Error::Status(..)) => return Err(failure),
+        Err(failure) => failure,
+    };
+    log::info!("network: {url} failed through the proxy, trying directly: {proxied}");
+    match send(None) {
+        Ok(response) => Ok(response),
+        Err(direct) if direct.cause.weight() > proxied.cause.weight() => Err(direct),
+        Err(_) => Err(proxied),
+    }
+}
+
+/// [`post_json`], read to text: the body of a success, or a sentence for
+/// a failure that carries the server's own words when it sent any (an AI
+/// provider says why it refused in its error body: a wrong key, an unknown
+/// model, a quota).
+pub fn post_json_text(
+    url: &str,
+    connect: Duration,
+    read: Duration,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> Result<String, String> {
+    match post_json(url, connect, read, headers, body) {
+        Ok(response) => response
+            .into_string()
+            .map_err(|error| format!("the answer could not be read: {error}")),
+        Err(failure) => match *failure {
+            Failure {
+                error: ureq::Error::Status(code, response),
+                ..
+            } => {
+                let said = response.into_string().unwrap_or_default();
+                let said: String = said.chars().take(600).collect();
+                Err(format!("HTTP {code}: {said}"))
+            }
+            Failure { cause, .. } => Err(cause.describe()),
+        },
+    }
+}
+
 /// An agent with these timeouts, through `route` when there is one.
 fn agent(route: Option<&Route>, connect: Duration, read: Duration, trust: Trust) -> ureq::Agent {
     let tls = match trust {

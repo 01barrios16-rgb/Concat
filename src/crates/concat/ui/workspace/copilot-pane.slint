@@ -1,0 +1,434 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jareer Abdullah
+
+// The Copilot pane: a chat with an AI model that edits the open project.
+// The person writes what they want; the model reads the timeline, makes
+// the edits as ordinary undo steps, and says what it did. Each tool it
+// runs shows as a step line between the person's message and its answer,
+// so nothing changes on the timeline without a line saying so.
+//
+// The gear swaps the chat for the settings: which provider, which model,
+// the key and the address. Rust owns them (copilot/mod.rs) and saves them
+// on Save.
+
+import { I18n } from "../i18n.slint";
+import { Theme } from "../theme/theme.slint";
+import { Glyph, Icon } from "../icons.slint";
+import { IconButton } from "../primitives/panel.slint";
+import { Button, Field } from "../primitives/modal.slint";
+import { Select } from "../primitives/select.slint";
+import { Pane, PaneHeader } from "pane.slint";
+import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
+
+/// One line of the chat. `role` is "user", "assistant", "tool" (a step the
+/// model took) or "error".
+export struct CopilotLine {
+    role: string,
+    text: string,
+}
+
+/// The pane's state and verbs; Rust publishes the lines and handles the
+/// callbacks.
+export global CopilotChat {
+    in property <[CopilotLine]> lines;
+    /// A request is running.
+    in property <bool> busy;
+    /// What the running request is doing, in a few words.
+    in property <string> status;
+    /// Bumped by Rust when a line is added, so the chat scrolls to it.
+    in-out property <int> scroll-token;
+
+    /// The settings as saved: the provider's index, and the three texts
+    /// (empty for the provider's default).
+    in property <int> provider;
+    in property <string> model;
+    in property <string> api-key;
+    in property <string> base-url;
+    /// The model a request asks for, the default filled in.
+    in property <string> model-shown;
+    /// The settings are enough to send a request.
+    in property <bool> configured;
+    /// Each provider's default model and address, by index.
+    in property <[string]> default-models;
+    in property <[string]> default-urls;
+
+    callback send(text: string);
+    callback stop();
+    callback clear();
+    callback save-settings(provider: int, model: string, key: string, url: string);
+}
+
+// One message: the person's on the right in the accent's wash, the model's
+// on the left on the raised ground, a step as a muted line with a mark,
+// and an error in the danger tone.
+component Bubble inherits Rectangle {
+    in property <CopilotLine> line;
+    property <bool> mine: root.line.role == "user";
+    property <bool> step: root.line.role == "tool";
+    property <bool> failed: root.line.role == "error";
+
+    HorizontalLayout {
+        padding-left: root.mine ? 36px : 0px;
+        padding-right: root.mine ? 0px : 36px;
+
+        if root.step: HorizontalLayout {
+            spacing: 6px;
+            padding-left: 4px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    glyph: Glyph.wand;
+                    size: 11px;
+                    tint: Theme.accent;
+                }
+            }
+            Text {
+                text: root.line.text;
+                color: Theme.fg-muted;
+                font-size: Theme.fs-sm;
+                wrap: word-wrap;
+                vertical-alignment: center;
+            }
+        }
+
+        if !root.step: Rectangle {
+            border-radius: Theme.r-lg;
+            background: root.mine ? Theme.accent-soft
+                : root.failed ? Theme.danger-soft
+                : Theme.raised;
+
+            VerticalLayout {
+                padding: 10px;
+                padding-top: 7px;
+                padding-bottom: 7px;
+                Text {
+                    text: root.line.text;
+                    color: root.failed ? Theme.danger : Theme.fg;
+                    font-size: Theme.fs;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+// The settings, in place of the chat.
+component CopilotSettings inherits VerticalLayout {
+    callback done();
+
+    property <int> provider: CopilotChat.provider;
+    property <string> model: CopilotChat.model;
+    property <string> key: CopilotChat.api-key;
+    property <string> url: CopilotChat.base-url;
+    property <bool> show-key;
+
+    padding: 12px;
+    spacing: 8px;
+    alignment: start;
+
+    Text {
+        text: I18n.t("copilot.provider");
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+    }
+    Select {
+        options: [
+            I18n.t("copilot.providerAnthropic"),
+            I18n.t("copilot.providerOpenai"),
+            I18n.t("copilot.providerOllama"),
+            I18n.t("copilot.providerCustom"),
+        ];
+        current: root.provider;
+        changed(index) => { root.provider = index; }
+    }
+
+    Text {
+        text: I18n.t("copilot.model");
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+    }
+    Field {
+        value: root.model;
+        placeholder: CopilotChat.default-models[root.provider];
+        technical: true;
+        edited(text) => { root.model = text; }
+    }
+
+    Text {
+        text: I18n.t("copilot.apiKey");
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        Field {
+            value: root.key;
+            placeholder: root.provider == 2 ? I18n.t("copilot.keyNotNeeded") : "sk-…";
+            technical: true;
+            secret: !root.show-key;
+            edited(text) => { root.key = text; }
+        }
+        Button {
+            square: true;
+            glyph: root.show-key ? Glyph.eye-off : Glyph.eye;
+            label: I18n.t("copilot.showKey");
+            clicked => { root.show-key = !root.show-key; }
+        }
+    }
+
+    Text {
+        text: I18n.t("copilot.address");
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+    }
+    Field {
+        value: root.url;
+        placeholder: CopilotChat.default-urls[root.provider] != ""
+            ? CopilotChat.default-urls[root.provider] : "https://…/v1";
+        technical: true;
+        edited(text) => { root.url = text; }
+    }
+
+    Text {
+        text: I18n.t("copilot.settingsNote");
+        color: Theme.fg-dim;
+        font-size: Theme.fs-xs;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: end;
+        Button {
+            label: I18n.t("common.cancel");
+            clicked => {
+                root.provider = CopilotChat.provider;
+                root.model = CopilotChat.model;
+                root.key = CopilotChat.api-key;
+                root.url = CopilotChat.base-url;
+                root.done();
+            }
+        }
+        Button {
+            label: I18n.t("copilot.save");
+            primary: true;
+            clicked => {
+                CopilotChat.save-settings(root.provider, root.model, root.key, root.url);
+                root.done();
+            }
+        }
+    }
+}
+
+export component CopilotPane inherits Pane {
+    in property <int> pane-seat;
+    in property <bool> pane-removable;
+    callback pane-picked(kind: PaneKind);
+    callback pane-removed();
+
+    /// The settings are showing instead of the chat; at first when there is
+    /// nothing to send a request with.
+    property <bool> setting: !CopilotChat.configured;
+    property <string> draft;
+
+    function submit() {
+        if (!CopilotChat.busy && root.draft != "") {
+            CopilotChat.send(root.draft);
+            root.draft = "";
+        }
+    }
+
+    VerticalLayout {
+        PaneHeader {
+            title: I18n.t("copilot.title");
+
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    glyph: Glyph.trash;
+                    label: I18n.t("copilot.clear");
+                    enabled: !CopilotChat.busy && CopilotChat.lines.length > 0;
+                    clicked => { CopilotChat.clear(); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    glyph: Glyph.settings;
+                    label: I18n.t("copilot.settings");
+                    checked: root.setting;
+                    clicked => { root.setting = !root.setting; }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                PaneSwitcher {
+                    kind: PaneKind.copilot;
+                    seat: root.pane-seat;
+                    removable: root.pane-removable;
+                    picked(kind) => { root.pane-picked(kind); }
+                    removed => { root.pane-removed(); }
+                }
+            }
+        }
+
+        if root.setting: CopilotSettings {
+            vertical-stretch: 1;
+            done => { root.setting = false; }
+        }
+
+        if !root.setting: VerticalLayout {
+            vertical-stretch: 1;
+
+            Rectangle {
+                vertical-stretch: 1;
+
+                // What it is for, until the first message.
+                if CopilotChat.lines.length == 0: VerticalLayout {
+                    padding: 20px;
+                    spacing: 10px;
+                    alignment: center;
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon {
+                            glyph: Glyph.sparkle;
+                            size: 22px;
+                            tint: Theme.accent;
+                        }
+                    }
+                    Text {
+                        text: I18n.t("copilot.emptyTitle");
+                        color: Theme.fg;
+                        font-size: Theme.fs-lg;
+                        font-weight: Theme.weight-title;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: I18n.t("copilot.emptyHint");
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: CopilotChat.model-shown;
+                        color: Theme.fg-dim;
+                        font-size: Theme.fs-xs;
+                        font-family: Theme.font-technical;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                flick := Flickable {
+                    viewport-height: max(self.height, column.preferred-height);
+
+                    column := VerticalLayout {
+                        width: flick.width;
+                        padding: 10px;
+                        spacing: 8px;
+                        alignment: start;
+
+                        for line in CopilotChat.lines: Bubble {
+                            line: line;
+                        }
+                    }
+                }
+
+                // Down to the newest line whenever one is added.
+                property <int> token: CopilotChat.scroll-token;
+                changed token => {
+                    flick.viewport-y = min(0px, flick.height - column.preferred-height);
+                }
+            }
+
+            // What the request is doing, while it runs.
+            if CopilotChat.busy: Rectangle {
+                height: 22px;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            glyph: Glyph.sparkle;
+                            size: 11px;
+                            tint: Theme.accent;
+                        }
+                    }
+                    Text {
+                        text: CopilotChat.status;
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-xs;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // The message being written, and Send or Stop.
+            Rectangle {
+                height: 48px;
+                Rectangle {
+                    y: 0;
+                    height: 1px;
+                    background: Theme.line;
+                }
+                HorizontalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        border-radius: Theme.r;
+                        background: Theme.field;
+                        border-width: 1px;
+                        border-color: input.has-focus ? Theme.accent : Colors.transparent;
+                        clip: true;
+
+                        TouchArea {
+                            mouse-cursor: MouseCursor.text;
+                            clicked => { input.focus(); }
+                        }
+
+                        if root.draft == "": Text {
+                            x: 10px;
+                            text: I18n.t("copilot.placeholder");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            width: parent.width - 20px;
+                        }
+
+                        input := TextInput {
+                            x: 10px;
+                            width: parent.width - 20px;
+                            height: self.preferred-height;
+                            y: (parent.height - self.height) / 2;
+                            text <=> root.draft;
+                            color: Theme.fg;
+                            font-size: Theme.fs;
+                            single-line: true;
+                            enabled: !CopilotChat.busy;
+                            selection-background-color: Theme.accent;
+                            selection-foreground-color: Theme.on-accent;
+                            accepted => { root.submit(); }
+                        }
+                    }
+
+                    if !CopilotChat.busy: Button {
+                        label: I18n.t("copilot.send");
+                        primary: true;
+                        enabled: root.draft != "";
+                        clicked => { root.submit(); }
+                    }
+                    if CopilotChat.busy: Button {
+                        label: I18n.t("copilot.stop");
+                        glyph: Glyph.stop;
+                        clicked => { CopilotChat.stop(); }
+                    }
+                }
+            }
+        }
+    }
+}

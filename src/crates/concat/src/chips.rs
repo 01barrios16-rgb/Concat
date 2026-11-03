@@ -49,6 +49,8 @@ pub fn pane_glyph(slug: &str) -> &'static str {
         }
         // lucide/diamond
         "keyframes" => "M12 2.5l9.5 9.5-9.5 9.5-9.5-9.5z",
+        // a four-point spark, the Copilot's mark
+        "copilot" => "M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z",
         // lucide/sliders-horizontal
         "inspector" => {
             "M10 5H3 M12 19H3 M14 3v4 M16 17v4 M21 12h-9 M21 19h-5 M21 5h-7 \

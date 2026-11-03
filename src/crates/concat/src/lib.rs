@@ -33,6 +33,7 @@ mod ui {
 
 mod batch_volume;
 mod chips;
+mod copilot;
 mod dock;
 mod fonts;
 mod format;
@@ -412,6 +413,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         models: Models::new(),
     });
     Shell::install(shell.clone());
+
+    // The Copilot pane's chat and its saved settings; see copilot/mod.rs.
+    {
+        let config = shell.studio.borrow().host.dirs.config.clone();
+        copilot::install(&app, config);
+    }
 
     // The machine's fonts, for the Text inspector's picker. Read on a
     // worker: on a machine with a few thousand faces it is a moment, and
