@@ -50,18 +50,18 @@ impl Live {
 impl Backend for Live {
     fn call(&mut self, request: Request) -> Result<Value, ApiError> {
         match request {
-            Request::ProjectGet { .. } => on_window(|studio| studio.live_view().map(view)),
-            Request::EditApply { command, .. } => {
-                on_window(move |studio| studio.live_apply(*command).map(view))
+            Request::ProjectGet { path } => on_window(path, |studio| studio.live_view().map(view)),
+            Request::EditApply { path, command } => {
+                on_window(path, move |studio| studio.live_apply(*command).map(view))
             }
-            Request::EditUndo { .. } => on_window(|studio| studio.live_undo().map(view)),
-            Request::EditRedo { .. } => on_window(|studio| studio.live_redo().map(view)),
-            Request::MediaImport { file, .. } => {
-                on_window(move |studio| studio.live_import(&file).map(view))
+            Request::EditUndo { path } => on_window(path, |studio| studio.live_undo().map(view)),
+            Request::EditRedo { path } => on_window(path, |studio| studio.live_redo().map(view)),
+            Request::MediaImport { path, file } => {
+                on_window(path, move |studio| studio.live_import(&file).map(view))
             }
-            Request::ProjectSave { .. } => {
-                on_window(|studio| studio.live_save().map(|()| json!({ "saved": true })))
-            }
+            Request::ProjectSave { path, .. } => on_window(path, |studio| {
+                studio.live_save().map(|()| json!({ "saved": true }))
+            }),
             request @ (Request::Version
             | Request::MediaProbe { .. }
             | Request::CatalogueList { .. }
@@ -99,12 +99,19 @@ fn view(view: EditorView) -> Value {
 /// Runs `body` against the window's state on the event loop, republishes
 /// the panes, and waits for its answer.
 fn on_window(
+    path: String,
     body: impl FnOnce(&mut Studio) -> Result<Value, String> + Send + 'static,
 ) -> Result<Value, ApiError> {
     let (sender, answer) = mpsc::channel();
     slint::invoke_from_event_loop(move || {
         Shell::with(|shell, app| {
-            let result = body(&mut shell.studio.borrow_mut());
+            // Check on the event loop, immediately before the operation: the
+            // person may have switched projects while the model was thinking.
+            let result = {
+                let mut studio = shell.studio.borrow_mut();
+                ensure_project(&path, studio.live_path().as_deref())
+                    .and_then(|()| body(&mut studio))
+            };
             shell.studio.borrow().publish(&app, &shell.models);
             let _ = sender.send(result);
         });
@@ -119,5 +126,31 @@ fn on_window(
             Err(ApiError::failed("the window took too long to answer"))
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => Err(ApiError::failed("the window has closed")),
+    }
+}
+
+/// A late model reply must never edit a different project with reused ids.
+fn ensure_project(requested: &str, open: Option<&str>) -> Result<(), String> {
+    if open == Some(requested) {
+        Ok(())
+    } else {
+        Err(
+            "the project changed or was closed while the Copilot was working; \
+             send a new request for the project now open"
+                .to_owned(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_project;
+
+    #[test]
+    fn late_replies_are_refused_after_switching_or_closing_the_project() {
+        assert!(ensure_project("project-a", Some("project-a")).is_ok());
+        assert!(ensure_project("project-a", Some("project-b")).is_err());
+        assert!(ensure_project("project-a", None).is_err());
+        assert!(ensure_project("", Some("project-b")).is_err());
     }
 }
