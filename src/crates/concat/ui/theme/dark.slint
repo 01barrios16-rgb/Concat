@@ -79,12 +79,12 @@ export global Dark {
     // separating a pane from the ground; without one the value step has to do
     // all of it, and a darker ladder leaves the panes reading as holes in the
     // window rather than as surfaces on it.
-    out property <color> panel: #212123;
-    out property <color> raised: #2b2b2e;
+    out property <color> panel: #242426;
+    out property <color> raised: #2e2e31;
     out property <color> well: #19191b;
-    out property <color> field: #323235;
-    out property <color> field-hover: #3b3b3e;
-    out property <color> field-active: #46464a;
+    out property <color> field: #36363a;
+    out property <color> field-hover: #414145;
+    out property <color> field-active: #4b4b50;
 
     // the launch screen's own ladder — a deeper cut of the one above
     //
@@ -113,8 +113,8 @@ export global Dark {
 
     // text
     out property <color> fg: #f5f5f7;
-    out property <color> fg-muted: #a1a1a6;
-    out property <color> fg-dim: #6e6e73;
+    out property <color> fg-muted: #b5b5bc;
+    out property <color> fg-dim: #9797a0;
     // One step past `fg`, away from the ground: pure white here, pure black
     // on the light palette. For the one button whose fill *is* the ink —
     // the launch screen's Create — where hover has to mean more contrast
@@ -220,7 +220,7 @@ export global Dark {
     // now sits *on* something rather than floating in a hole. Both stay well
     // under `panel`, or the empty stretches would read as content.
     out property <color> lane: #1a1a1c;
-    out property <color> lane-alt: #1e1e20;
+    out property <color> lane-alt: #202023;
     // The ruler is its own surface, not the first row of the stack: a step
     // under the darker lane, so the strip carrying the timestamps reads as
     // the floor of the pane and the banding starts below it. It followed

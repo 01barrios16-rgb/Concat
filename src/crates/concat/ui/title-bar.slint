@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer Abdullah and Concat contributors
 
+import { Button } from "primitives/modal.slint";
 import { I18n } from "i18n.slint";
 import { Theme } from "theme/theme.slint";
 import { Glyph, Icon } from "icons.slint";
@@ -149,7 +150,7 @@ export component TitleBar inherits Rectangle {
     callback add-pane(kind: PaneKind);
     callback export-clicked();
 
-    height: 32px;
+    height: Theme.titlebar-h;
     // The window's ground, not a panel's: the strip is the frame the panes
     // float in, and it reads as one with the gutters between them.
     background: root.deep ? Theme.launch-page : Theme.page;
@@ -248,6 +249,17 @@ export component TitleBar inherits Rectangle {
 
         Rectangle { horizontal-stretch: 1; }
 
+        // A visible entry point to the assistant, using the existing dock action.
+        if !root.minimal: VerticalLayout {
+            alignment: center;
+            padding-right: 6px;
+            Button {
+                label: I18n.t("copilot.title");
+                glyph: Glyph.sparkle;
+                clicked => { root.add-pane(PaneKind.copilot); }
+            }
+        }
+
         // Beside Settings, because it is the same sort of thing: neither one
         // is about the project, both are about the window you are looking at
         // it through. A seat's own corner button changes or closes that seat;
@@ -281,7 +293,7 @@ export component TitleBar inherits Rectangle {
 
             export-button := Rectangle {
                 width: label.width + icon.width + 26px;
-                height: 24px;
+                height: 28px;
                 border-radius: Theme.r-sm;
                 background: export-touch.has-hover ? Theme.accent-hover : Theme.accent;
 
