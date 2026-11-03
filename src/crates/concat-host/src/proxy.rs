@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use concat_core::frame::Signal;
+use concat_core::time::FrameRate;
 use concat_media::decode::{DecodeOptions, Decoder, FrameSource};
 use concat_media::{ColorRange, EncodeOptions, Encoder, FrameSink, Priority, RateMode, VideoCodec};
 
@@ -31,6 +32,19 @@ const PIXELS_WITHOUT_PROXY: u64 = 1920 * 1080;
 /// shorter than [`SHORTEST_LONG_SIDE`].
 const DIVISOR: u32 = 4;
 const SHORTEST_LONG_SIDE: u32 = 960;
+
+/// Working copies need at most 30 pictures a second. A recording's average
+/// can also be a large fraction (119997/1000, for example), whose inverse
+/// MPEG-4 cannot use as its clock: its denominator must fit in 16 bits.
+/// Pace to a supported clock instead of just relabelling the same frames,
+/// so variable-rate recordings keep their timing and the copy stays light.
+fn playback_rate(source: FrameRate) -> FrameRate {
+    if source.fps() > FrameRate::THIRTY.fps() || source.fps().numerator() > 65_535 {
+        FrameRate::THIRTY
+    } else {
+        source
+    }
+}
 
 /// Whether a `width` by `height` file is worth a proxy.
 pub fn wanted(width: u32, height: u32) -> bool {
@@ -194,6 +208,8 @@ pub fn sweep(project: &Path, keep: &HashSet<PathBuf>) -> usize {
 /// HDR source's copy keeps its signal - HEVC in ten bits, HLG or PQ as the
 /// source is, on the hardware encoder where there is one - so an HDR
 /// timeline plays it as the original draws when paused.
+/// The decoder paces the copy to at most 30 fps using the source's real
+/// timestamps; the original's frame rate is kept for exports.
 pub fn write(
     source: &str,
     target: &Path,
@@ -207,6 +223,7 @@ pub fn write(
         .map(|video| (video.frame_rate, video.signal))
         .ok_or_else(|| "no video stream".to_owned())?;
     let hdr = matches!(signal, Signal::Hlg | Signal::Pq);
+    let rate = playback_rate(rate);
     if let Some(folder) = target.parent() {
         std::fs::create_dir_all(folder)
             .map_err(|error| format!("{}: {error}", folder.display()))?;
@@ -214,12 +231,21 @@ pub fn write(
     // Written beside the target under a name the muxer still knows the
     // format of, and moved into place only when whole.
     let partial = target.with_extension("part.mp4");
-    let options = DecodeOptions::default()
+    let mut options = DecodeOptions::default()
         .scaled_to(width, height)
+        .at_rate(rate)
         .in_software()
         .threaded(2)
         .in_range(range)
         .deep(hdr);
+    // The pacer may hold the last source picture for one output interval.
+    // A stated duration bounds that hold when a fast source is downsampled.
+    if let Some(duration) = info
+        .duration
+        .filter(|duration| !duration.is_negative() && !duration.is_zero())
+    {
+        options.max_frames = Some((duration * rate.fps()).ceil() as u64);
+    }
     let mut decoder = Decoder::open(source, &options).map_err(|error| error.to_string())?;
     let encoding = EncodeOptions {
         codec: if hdr {
@@ -246,7 +272,12 @@ pub fn write(
     } else {
         Encoder::create(&partial, width, height, rate, &encoding)
     }
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| {
+        // Opening an unsupported encoder clock can already have created
+        // the temporary file; it must not look like a proxy still writing.
+        let _ = std::fs::remove_file(&partial);
+        error.to_string()
+    })?;
     let result = (|| {
         while let Some(frame) = decoder.next_frame().map_err(|error| error.to_string())? {
             encoder
@@ -272,6 +303,76 @@ pub fn write(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn working_copies_use_a_light_representable_clock() {
+        use concat_core::time::Rational;
+        for rate in [
+            FrameRate::THIRTY,
+            FrameRate::NTSC_30,
+            FrameRate::new(Rational::new(24, 1)),
+        ] {
+            assert_eq!(playback_rate(rate), rate);
+        }
+        for rate in [
+            Rational::new(60, 1),
+            Rational::new(119_997, 1_000),
+            Rational::new(1495127077, 12459726),
+            Rational::new(29_987_123, 1_000_000),
+        ] {
+            assert_eq!(playback_rate(FrameRate::new(rate)), FrameRate::THIRTY);
+        }
+    }
+
+    #[test]
+    fn a_high_rate_proxy_keeps_duration_with_fewer_frames() {
+        use concat_core::frame::Frame;
+        use concat_core::time::Rational;
+        let dir = std::env::temp_dir().join(format!("concat-proxy-rate-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let source = dir.join("120fps.mp4");
+        let target = dir.join("proxy.mp4");
+        let rate = FrameRate::new(Rational::new(120, 1));
+        let mut encoder = Encoder::create(
+            &source,
+            64,
+            48,
+            rate,
+            &EncodeOptions {
+                codec: VideoCodec::Mpeg4,
+                hardware: false,
+                ..EncodeOptions::default()
+            },
+        )
+        .expect("software MPEG-4 fixture");
+        for index in 0..240 {
+            let mut frame = Frame::black(64, 48);
+            frame.fill([if index < 120 { 220 } else { 20 }, 20, 20, 255]);
+            encoder.write_frame(&frame).expect("writes");
+        }
+        encoder.finish().expect("finishes");
+        drop(encoder);
+        write(&source.to_string_lossy(), &target, (64, 48), None).expect("writes paced proxy");
+        let info = concat_media::probe(&target).expect("probes proxy");
+        assert_eq!(info.video.expect("video").frame_rate, FrameRate::THIRTY);
+        let mut decoder =
+            Decoder::open(&target, &DecodeOptions::default().in_software()).expect("opens proxy");
+        let mut frames = 0;
+        while let Some(frame) = decoder.next_frame().expect("decodes") {
+            assert_eq!(
+                frame.pixels()[0] > 100,
+                frames < 30,
+                "the cut stays at one second"
+            );
+            frames += 1;
+        }
+        assert_eq!(
+            frames, 60,
+            "two seconds at 30 fps, rather than a sped-up recording"
+        );
+        drop(decoder);
+        std::fs::remove_dir_all(dir).expect("cleans scratch files");
+    }
 
     /// An HDR file's proxy keeps its signal: HEVC, HLG as the file is,
     /// its grey coming back as the same signal - under a name of its own,
