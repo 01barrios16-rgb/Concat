@@ -16,7 +16,9 @@ use super::Studio;
 impl Studio {
     /// The open project's folder, if one is open.
     pub fn live_path(&self) -> Option<String> {
-        self.session.as_ref().map(|session| session.path().to_owned())
+        self.session
+            .as_ref()
+            .map(|session| session.path().to_owned())
     }
 
     /// The open project as the engine sees it.

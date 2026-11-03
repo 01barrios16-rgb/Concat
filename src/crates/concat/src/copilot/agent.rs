@@ -201,7 +201,13 @@ pub fn run(
                 .unwrap_or(call.name.as_str())
                 .to_owned();
             report(Event::Step(title));
-            outcomes.push(call_tool(toolbox, &mut backend, project.as_deref(), call, stop));
+            outcomes.push(call_tool(
+                toolbox,
+                &mut backend,
+                project.as_deref(),
+                call,
+                stop,
+            ));
         }
         history.push(Message::Results(outcomes));
         // The last round's calls ran, but the model never saw what they did.

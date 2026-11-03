@@ -727,10 +727,10 @@ export component App inherits Window {
                 keyboard-menu: root.keyboard-menu;
                 keyboard-token: root.keyboard-menu-token;
                 menu-opened(index, at-x, keyboard) => {
-                    // Under the strip, which is 32px tall - both measured
+                    // Under the strip, using the same metric as the title bar - both measured
                     // from the window's corner, past the system's bars.
                     appmenu.request-x = at-x + root.safe-area-insets.left;
-                    appmenu.request-y = 32px + root.safe-area-insets.top;
+                    appmenu.request-y = Theme.titlebar-h + root.safe-area-insets.top;
                     root.menu-by-keyboard = keyboard;
                     root.menu-opened(index);
                 }

@@ -130,7 +130,7 @@ export global Theme {
     // touching a colour token, and every face is bundled, so it costs nothing
     // at runtime. Reach for it rather than nudging a surface to compensate.
     out property <int> weight-body: 400;
-    out property <int> weight-title: 500;
+    out property <int> weight-title: 600;
     /// The launch screen's heading, and the wordmark in the title bar. The one
     /// weight above `title`, and the only place the type gets to be loud. Bold
     /// is bundled, so this names it exactly.
@@ -142,12 +142,13 @@ export global Theme {
     out property <length> r-xs: 3px;
     out property <length> r-sm: 5px;
     out property <length> r: 7px;
-    out property <length> r-lg: 12px;
+    out property <length> r-lg: 10px;
     /// The dialog sheet, and nothing smaller. A modal is the largest rounded
     /// thing in the window and wants a corner to match.
     out property <length> r-xl: 16px;
 
     // metrics
+    out property <length> titlebar-h: 40px;
     out property <length> h: 28px;        // standard control height
     out property <length> gap: 6px;
     out property <length> pad: 14px;      // panel horizontal padding

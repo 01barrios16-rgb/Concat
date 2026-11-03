@@ -298,6 +298,7 @@ fn a_shaky_shot_is_measured_and_held_still() {
                     height: HEIGHT,
                     moving: false,
                     proxy: false,
+                    nearest: false,
                     color_space: ColorSpace::default(),
                 },
             )
