@@ -321,7 +321,7 @@ export component CopilotPane inherits Pane {
                 }
 
                 flick := Flickable {
-                    viewport-height: max(self.height, column.preferred-height);
+                    content-height: max(self.height, column.preferred-height);
 
                     column := VerticalLayout {
                         width: flick.width;
@@ -338,7 +338,7 @@ export component CopilotPane inherits Pane {
                 // Down to the newest line whenever one is added.
                 property <int> token: CopilotChat.scroll-token;
                 changed token => {
-                    flick.viewport-y = min(0px, flick.height - column.preferred-height);
+                    flick.content-y = min(0px, flick.height - column.preferred-height);
                 }
             }
 
