@@ -412,7 +412,7 @@ fn text(bytes: &[u8]) -> String {
 }
 
 /// What the tests of this crate share.
-#[cfg(test)]
+#[cfg(all(test, feature = "infer", target_vendor = "apple"))]
 pub(crate) mod tests_support {
     pub(crate) use super::tests::fetched_model;
 }
