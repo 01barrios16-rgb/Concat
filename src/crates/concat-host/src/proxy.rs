@@ -33,16 +33,24 @@ const PIXELS_WITHOUT_PROXY: u64 = 1920 * 1080;
 const DIVISOR: u32 = 4;
 const SHORTEST_LONG_SIDE: u32 = 960;
 
-/// Working copies need at most 30 pictures a second. A recording's average
-/// can also be a large fraction (119997/1000, for example), whose inverse
-/// MPEG-4 cannot use as its clock: its denominator must fit in 16 bits.
-/// Pace to a supported clock instead of just relabelling the same frames,
-/// so variable-rate recordings keep their timing and the copy stays light.
+/// Working copies play at most 60 pictures a second: as smooth as a 60 fps
+/// timeline draws, without carrying a 120 fps recording's every frame. A
+/// recording's average can also be a large fraction (119997/1000, for
+/// example), whose inverse MPEG-4 cannot use as its clock: its numerator
+/// and denominator must fit in 16 bits. Such a rate is paced to 60 when it
+/// is near or above it and to 30 below, rather than relabelling the same
+/// frames, so variable-rate recordings keep their timing.
 fn playback_rate(source: FrameRate) -> FrameRate {
-    if source.fps() > FrameRate::THIRTY.fps() || source.fps().numerator() > 65_535 {
-        FrameRate::THIRTY
-    } else {
+    let fps = source.fps();
+    let representable = fps.numerator() <= 65_535 && fps.denominator() <= 65_535;
+    if fps > FrameRate::SIXTY.fps() {
+        FrameRate::SIXTY
+    } else if representable {
         source
+    } else if fps.as_f64() >= 45.0 {
+        FrameRate::SIXTY
+    } else {
+        FrameRate::THIRTY
     }
 }
 
@@ -208,7 +216,7 @@ pub fn sweep(project: &Path, keep: &HashSet<PathBuf>) -> usize {
 /// HDR source's copy keeps its signal - HEVC in ten bits, HLG or PQ as the
 /// source is, on the hardware encoder where there is one - so an HDR
 /// timeline plays it as the original draws when paused.
-/// The decoder paces the copy to at most 30 fps using the source's real
+/// The decoder paces the copy to at most 60 fps using the source's real
 /// timestamps; the original's frame rate is kept for exports.
 pub fn write(
     source: &str,
@@ -310,18 +318,24 @@ mod tests {
         for rate in [
             FrameRate::THIRTY,
             FrameRate::NTSC_30,
+            FrameRate::SIXTY,
+            FrameRate::NTSC_60,
             FrameRate::new(Rational::new(24, 1)),
         ] {
             assert_eq!(playback_rate(rate), rate);
         }
         for rate in [
-            Rational::new(60, 1),
+            Rational::new(120, 1),
             Rational::new(119_997, 1_000),
             Rational::new(1495127077, 12459726),
-            Rational::new(29_987_123, 1_000_000),
+            Rational::new(59_987_123, 1_000_000),
         ] {
-            assert_eq!(playback_rate(FrameRate::new(rate)), FrameRate::THIRTY);
+            assert_eq!(playback_rate(FrameRate::new(rate)), FrameRate::SIXTY);
         }
+        assert_eq!(
+            playback_rate(FrameRate::new(Rational::new(29_987_123, 1_000_000))),
+            FrameRate::THIRTY
+        );
     }
 
     #[test]
@@ -354,21 +368,21 @@ mod tests {
         drop(encoder);
         write(&source.to_string_lossy(), &target, (64, 48), None).expect("writes paced proxy");
         let info = concat_media::probe(&target).expect("probes proxy");
-        assert_eq!(info.video.expect("video").frame_rate, FrameRate::THIRTY);
+        assert_eq!(info.video.expect("video").frame_rate, FrameRate::SIXTY);
         let mut decoder =
             Decoder::open(&target, &DecodeOptions::default().in_software()).expect("opens proxy");
         let mut frames = 0;
         while let Some(frame) = decoder.next_frame().expect("decodes") {
             assert_eq!(
                 frame.pixels()[0] > 100,
-                frames < 30,
+                frames < 60,
                 "the cut stays at one second"
             );
             frames += 1;
         }
         assert_eq!(
-            frames, 60,
-            "two seconds at 30 fps, rather than a sped-up recording"
+            frames, 120,
+            "two seconds at 60 fps, rather than a sped-up recording"
         );
         drop(decoder);
         std::fs::remove_dir_all(dir).expect("cleans scratch files");
