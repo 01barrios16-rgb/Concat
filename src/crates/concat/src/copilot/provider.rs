@@ -71,7 +71,7 @@ impl Provider {
     pub fn default_model(self) -> &'static str {
         match self {
             Provider::Anthropic => "claude-sonnet-5-5",
-            Provider::Openai => "gpt-4.1",
+            Provider::Openai => "gpt-5.5",
             Provider::Ollama => "qwen3:8b",
             Provider::Custom => "",
         }
@@ -351,9 +351,8 @@ fn openai(
 ) -> Result<Turn, String> {
     let mut wire = vec![json!({ "role": "system", "content": system })];
     wire.extend(openai_messages(messages));
-    let body = json!({
+    let mut body = json!({
         "model": settings.model(),
-        "max_tokens": MAX_TOKENS,
         "messages": wire,
         "tools": tools
             .iter()
@@ -367,6 +366,15 @@ fn openai(
             }))
             .collect::<Vec<_>>(),
     });
+    // OpenAI's own newer models refuse `max_tokens` and take
+    // `max_completion_tokens`; servers that copy the older format read the
+    // first.
+    let limit = if settings.provider == Provider::Openai {
+        "max_completion_tokens"
+    } else {
+        "max_tokens"
+    };
+    body[limit] = json!(MAX_TOKENS * 4);
     let url = format!("{}/chat/completions", settings.base_url());
     let key = settings.api_key.trim();
     let bearer = format!("Bearer {key}");

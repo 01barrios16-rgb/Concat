@@ -24,7 +24,7 @@ use super::provider::{self, Call, Message, Outcome, Settings, Tool};
 /// The most times the model is asked again after its tools ran, in one
 /// request. A long edit - captions over a minute of speech, a cut every few
 /// seconds - is a handful of rounds; past this it is going in circles.
-const ROUNDS: usize = 24;
+const ROUNDS: usize = 60;
 
 /// The longest tool result handed back, in characters. A timeline summary
 /// of a long edit can run to tens of thousands; the model needs the shape
@@ -105,9 +105,57 @@ fn tools() -> &'static (Toolbox, Vec<Tool>) {
                     schema,
                 })
             })
+            .chain(super::window_tools::tools())
             .collect();
         (toolbox, tools)
     })
+}
+
+/// What is on screen as the request starts: the timeline's summary (the
+/// same one timeline_read gives) and the playhead and selection, so the
+/// model starts from the edit instead of spending a round asking for it.
+fn screen_state(
+    toolbox: &Toolbox,
+    backend: &mut Live,
+    project: Option<&str>,
+    stop: &AtomicBool,
+) -> String {
+    let Some(path) = project else {
+        return "(no project open)".to_owned();
+    };
+    let timeline = toolbox
+        .call(
+            "timeline_read",
+            json!({ "path": path }),
+            Context {
+                backend,
+                cancelled: stop,
+                progress: None,
+            },
+        )
+        .map(|outcome| {
+            outcome
+                .content
+                .iter()
+                .filter_map(|block| block["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    let owned = path.to_owned();
+    let view = super::backend::on_window(owned, |studio| Ok(studio.live_context()))
+        .map(|context| context.to_string())
+        .unwrap_or_default();
+    clip_text(format!("Timeline: {timeline}\nView: {view}"))
+}
+
+/// A tool result cut to what the model needs.
+fn clip_text(mut content: String) -> String {
+    if content.chars().count() > RESULT_CHARS {
+        content = content.chars().take(RESULT_CHARS).collect();
+        content.push_str("\n… (cut short; call timeline_read for the rest)");
+    }
+    content
 }
 
 /// Takes the project's `path` out of a tool's schema.
@@ -120,31 +168,59 @@ fn drop_path(schema: &mut Value) {
     }
 }
 
-/// What the model is told before anything else.
-fn system_prompt(project: Option<&str>) -> String {
+/// What the model is told before anything else: who it is, the project,
+/// what is on screen right now, and how short-form edits are made.
+fn system_prompt(project: Option<&str>, state: &str) -> String {
     let project = match project {
         Some(path) => format!("The project open in the window is the folder {path}."),
         None => "No project is open in the window yet; editing tools will fail until the \
-                 person opens or creates one."
+                 person opens or creates one; tell them so."
             .to_owned(),
     };
     format!(
-        "You are the Copilot inside Concat, a video editor. You edit the project the person \
-         has open, on their timeline, while they watch: every tool call you make is applied at \
-         once as one undoable step (they can press Ctrl+Z).\n\
-         {project}\n\
-         How to work:\n\
-         - Call timeline_read first, and again whenever you need fresh ids; never invent clip, \
-         track or media ids.\n\
-         - Times are seconds on the timeline. Positions in a frame are fractions of its size.\n\
-         - Prefer a few precise edits over many speculative ones. If a request is ambiguous, \
-         ask one short question instead of guessing.\n\
-         - To add a file, the person must give its full path; then use media_import, then \
-         clip_add.\n\
-         - Exporting, opening and closing projects are done by the person with the window's \
-         buttons; say so if asked.\n\
-         - When you are done, say in one or two short sentences what you changed.\n\
-         Answer in the language the person writes in."
+        "You are the Copilot inside Concat, a video editor, with full control of the \
+         project the person has open. Every tool call is applied at once on their timeline as \
+         an undoable step (Ctrl+Z).\n\
+         {project}\n\n\
+         WHAT IS ON SCREEN NOW (read at the start of this request):\n{state}\n\n\
+         HOW TO WORK\n\
+         - Act, do not lecture. When the person asks for an edit, make it with the tools, \
+         then say briefly what you did. Never answer with instructions for them to follow \
+         when a tool can do it.\n\
+         - Use the ids above or from timeline_read; never invent ids. Call timeline_read \
+         again after big changes to get fresh ids and times.\n\
+         - Times are seconds on the timeline; positions in the frame are fractions.\n\
+         - \"This clip\", \"the selected one\", \"here\" mean the selection and the \
+         playhead above.\n\
+         - Broad creative requests (\"make it viral\", \"edit it for TikTok\", \
+         \"aggressive\", \"more dynamic\") are not ambiguous: carry out the recipe below \
+         fully, choosing sensible values yourself. Ask a question only when you truly \
+         cannot proceed (no project, no clips).\n\
+         - Use effects_list to find effect, filter and transition ids before applying them.\n\
+         - Files: the person gives a full path; media_import then clip_add.\n\
+         - Opening/closing projects is the person's to do with the window's buttons.\n\n\
+         RECIPE: AGGRESSIVE TIKTOK / SHORTS / REELS EDIT (\"agresivo\", \"dinámico\", \
+         \"viral\")\n\
+         1. Vertical frame: project_set_video to 1080x1920 at the timeline's rate (keep \
+         30 or 60 fps), then clip_frame each video clip with framing \"fill\" so it covers \
+         the frame.\n\
+         2. Pace: remove_silences on every clip with voice (thresholdDb -35, minSilence 0.3; \
+         for gameplay with constant sound use -24 and 0.25). Trim slow intros so the first \
+         second already has action (clip_trim, ripple). Long shots: clips_split every \
+         2-4 s at the best moments and drop dead parts (clips_remove with ripple).\n\
+         3. Hook: a big bold title_add in the first 0-2 s (3-6 words, CAPS, punchy, in the \
+         person's language), near the top third.\n\
+         4. Energy: punch-in zooms on key moments with keyframe_set on scale (1.0 -> 1.15-1.3 \
+         over 0.1-0.2 s, back after), small speed bumps with clip_speed (1.1-1.5x) on slow \
+         parts, quick transitions or flash/shake/glitch effects from effects_list between \
+         cuts. Do not overdo one effect: vary them.\n\
+         5. Captions: auto_captions on the main voice clip (big, centred-low captions are \
+         what short-form viewers expect).\n\
+         6. End: finish on a strong moment; no slow fade-out.\n\
+         Do every step you can with the tools, then summarise in 2-4 lines what changed and \
+         what the person could still add (music, their own footage). Export only if asked \
+         (export_video).\n\n\
+         Answer in the language the person writes in (Spanish if they write Spanish)."
     )
 }
 
@@ -158,8 +234,9 @@ pub fn run(
     report: &dyn Fn(Event),
 ) {
     let (toolbox, tools) = tools();
-    let system = system_prompt(project.as_deref());
     let mut backend = Live::default();
+    let state = screen_state(toolbox, &mut backend, project.as_deref(), stop);
+    let system = system_prompt(project.as_deref(), &state);
     let mut reply = String::new();
     let mut failure = None;
 
@@ -198,6 +275,7 @@ pub fn run(
             let title = toolbox
                 .find(&call.name)
                 .map(|(tool, _)| tool.title)
+                .or_else(|| super::window_tools::title(&call.name))
                 .unwrap_or(call.name.as_str())
                 .to_owned();
             report(Event::Step(title));
@@ -230,6 +308,20 @@ fn call_tool(
     call: Call,
     stop: &AtomicBool,
 ) -> Outcome {
+    if super::window_tools::has(&call.name) {
+        let result =
+            super::window_tools::call(&call.name, &call.arguments, project.unwrap_or_default());
+        let (content, is_error) = match result {
+            Ok(text) => (text, false),
+            Err(error) => (error, true),
+        };
+        return Outcome {
+            id: call.id,
+            name: call.name,
+            content: clip_text(content),
+            is_error,
+        };
+    }
     let allowed = ALLOWED.contains(&call.name.as_str());
     let mut arguments = match call.arguments {
         Value::Object(fields) => Value::Object(fields),
@@ -287,7 +379,10 @@ mod tests {
         for name in ALLOWED {
             assert!(toolbox.find(name).is_some(), "the MCP server has no {name}");
         }
-        assert_eq!(tools.len(), ALLOWED.len());
+        assert_eq!(
+            tools.len(),
+            ALLOWED.len() + super::super::window_tools::tools().len()
+        );
     }
 
     #[test]

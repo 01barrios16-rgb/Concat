@@ -16,6 +16,7 @@
 pub mod agent;
 mod backend;
 pub mod provider;
+mod window_tools;
 
 use std::cell::RefCell;
 use std::path::PathBuf;

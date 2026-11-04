@@ -46,7 +46,7 @@ use concat_project::{Command, PlayheadSide};
 
 mod backdrop;
 mod consolidate;
-mod live;
+pub mod live;
 use consolidate::MergeJob;
 mod masking;
 use masking::{MaskFrame, MaskGrip};

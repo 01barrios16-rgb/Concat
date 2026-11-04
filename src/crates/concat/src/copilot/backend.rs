@@ -92,13 +92,13 @@ impl Backend for Live {
 }
 
 /// An editor view as the API's JSON.
-fn view(view: EditorView) -> Value {
+pub(super) fn view(view: EditorView) -> Value {
     serde_json::to_value(&view).unwrap_or(Value::Null)
 }
 
 /// Runs `body` against the window's state on the event loop, republishes
 /// the panes, and waits for its answer.
-fn on_window(
+pub(super) fn on_window(
     path: String,
     body: impl FnOnce(&mut Studio) -> Result<Value, String> + Send + 'static,
 ) -> Result<Value, ApiError> {
