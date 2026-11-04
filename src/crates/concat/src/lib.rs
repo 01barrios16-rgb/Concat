@@ -365,9 +365,17 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 theme.set_accent_choice(count as i32);
             }
             None => {
-                let index = studio
-                    .prefs
-                    .accent_index(slint::Model::iter(&names).map(|name| name.to_string()));
+                // Never chosen: the neon cyan the futuristic dark look is
+                // built around.
+                let index = if studio.prefs.accent.is_none() {
+                    slint::Model::iter(&names)
+                        .position(|name| name.as_str() == "Sky")
+                        .unwrap_or(0)
+                } else {
+                    studio
+                        .prefs
+                        .accent_index(slint::Model::iter(&names).map(|name| name.to_string()))
+                };
                 theme.set_accent_choice(index as i32);
             }
         }

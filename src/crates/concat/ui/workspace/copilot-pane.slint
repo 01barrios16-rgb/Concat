@@ -93,9 +93,14 @@ component Bubble inherits Rectangle {
 
         if !root.step: Rectangle {
             border-radius: Theme.r-lg;
-            background: root.mine ? Theme.accent-soft
+            background: root.mine
+                ? @linear-gradient(135deg, Theme.accent-soft 0%, #a675ff38 100%)
                 : root.failed ? Theme.danger-soft
                 : Theme.raised;
+            border-width: 1px;
+            border-color: root.mine ? Theme.accent.with-alpha(0.45)
+                : root.failed ? Theme.danger.with-alpha(0.4)
+                : Theme.line;
 
             VerticalLayout {
                 padding: 10px;

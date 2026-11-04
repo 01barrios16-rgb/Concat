@@ -146,8 +146,9 @@ fn show_settings(app: &App, settings: &Settings) {
     chat.set_model(settings.model.as_str().into());
     chat.set_api_key(settings.api_key.as_str().into());
     chat.set_base_url(settings.base_url.as_str().into());
-    chat.set_model_shown(settings.model().into());
-    chat.set_configured(settings.problem().is_none());
+    let resolved = settings.resolved();
+    chat.set_model_shown(format!("{:?} · {}", resolved.provider, resolved.model()).into());
+    chat.set_configured(resolved.problem().is_none());
 }
 
 /// Writes `settings` where [`install`] reads them, readable by this user
@@ -193,7 +194,7 @@ fn send(app: &App, text: &str) {
             return None;
         }
         push(state, "user", text);
-        if let Some(problem) = state.settings.problem() {
+        if let Some(problem) = state.settings.resolved().problem() {
             let sentence = match problem {
                 Problem::Key => t("copilot.needsKey"),
                 Problem::Address => t("copilot.needsAddress"),

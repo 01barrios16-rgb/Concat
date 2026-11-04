@@ -79,12 +79,12 @@ export global Dark {
     // separating a pane from the ground; without one the value step has to do
     // all of it, and a darker ladder leaves the panes reading as holes in the
     // window rather than as surfaces on it.
-    out property <color> panel: #242426;
-    out property <color> raised: #2e2e31;
-    out property <color> well: #19191b;
-    out property <color> field: #36363a;
-    out property <color> field-hover: #414145;
-    out property <color> field-active: #4b4b50;
+    out property <color> panel: #0c0f18;
+    out property <color> raised: #121725;
+    out property <color> well: #070910;
+    out property <color> field: #1a2032;
+    out property <color> field-hover: #232b44;
+    out property <color> field-active: #2c3656;
 
     // the launch screen's own ladder — a deeper cut of the one above
     //
@@ -100,21 +100,21 @@ export global Dark {
     // reads: `launch-well` is sunken under the card, `launch-raised` is the
     // lift a hover gives, `launch-field` is a chip that is the answer. Only
     // the whole ladder has moved down.
-    out property <color> launch-page: #0e0e10;
-    out property <color> launch-panel: #161619;
-    out property <color> launch-well: #101013;
-    out property <color> launch-raised: #1e1e22;
-    out property <color> launch-field: #26262b;
-    out property <color> launch-field-active: #313138;
+    out property <color> launch-page: #03040a;
+    out property <color> launch-panel: #0a0d17;
+    out property <color> launch-well: #06080f;
+    out property <color> launch-raised: #101524;
+    out property <color> launch-field: #171d2e;
+    out property <color> launch-field-active: #212a42;
 
     // hairlines — white-alpha, so they hold on panel, well, and ground alike.
-    out property <color> line: #ffffff1a;         // rgb(255 255 255 / 0.1)
-    out property <color> line-strong: #ffffff33;  // rgb(255 255 255 / 0.2)
+    out property <color> line: #6fa8ff26;         // rgb(255 255 255 / 0.1)
+    out property <color> line-strong: #6fa8ff52;  // rgb(255 255 255 / 0.2)
 
     // text
-    out property <color> fg: #f5f5f7;
-    out property <color> fg-muted: #b5b5bc;
-    out property <color> fg-dim: #9797a0;
+    out property <color> fg: #eef4ff;
+    out property <color> fg-muted: #aab6d3;
+    out property <color> fg-dim: #7f8bab;
     // One step past `fg`, away from the ground: pure white here, pure black
     // on the light palette. For the one button whose fill *is* the ink —
     // the launch screen's Create — where hover has to mean more contrast
@@ -137,8 +137,8 @@ export global Dark {
     // which is where each one's name lives.
     out property <[Accent]> accents: [
         { accent: #cbf53f, hover: #d9ff63, soft: #cbf53f33, on: #15220a },   // lime
-        { accent: #5fb8ff, hover: #82c9ff, soft: #5fb8ff33, on: #061c33 },   // sky
-        { accent: #b394ff, hover: #c6b0ff, soft: #b394ff33, on: #1d0f3d },   // violet
+        { accent: #00d9ff, hover: #5ce6ff, soft: #00d9ff33, on: #001a22 },   // sky: neon cyan
+        { accent: #a675ff, hover: #bd96ff, soft: #a675ff33, on: #1a0b38 },   // violet: neon
         { accent: #ff6fa3, hover: #ff8fb8, soft: #ff6fa333, on: #38091c },   // rose
         { accent: #ffb340, hover: #ffc46a, soft: #ffb34033, on: #2d1a00 },   // amber
         { accent: #3fdcc4, hover: #6ae7d4, soft: #3fdcc433, on: #05261f },   // mint
@@ -219,25 +219,25 @@ export global Dark {
     // still reads as a well cut into the pane, and a clip's own dark ground
     // now sits *on* something rather than floating in a hole. Both stay well
     // under `panel`, or the empty stretches would read as content.
-    out property <color> lane: #1a1a1c;
-    out property <color> lane-alt: #202023;
+    out property <color> lane: #080a12;
+    out property <color> lane-alt: #0d101c;
     // The ruler is its own surface, not the first row of the stack: a step
     // under the darker lane, so the strip carrying the timestamps reads as
     // the floor of the pane and the banding starts below it. It followed
     // `raised` before, which put it above the panel and made it the brightest
     // thing in the pane — the opposite of what a ruler should be.
-    out property <color> ruler: #171719;
+    out property <color> ruler: #070910;
     /// The vertical rules. 6% white was set against a lane that was still a
     /// dark grey, and all but vanished when the lanes went black — a grid that
     /// costs elements and reads as nothing. 14% clears both of the tones the
     /// lanes now carry while staying under `line-strong`, so the rules place a
     /// clip without competing with it.
-    out property <color> grid: #ffffff24;
+    out property <color> grid: #6fa8ff1f;
     // Lime: the palette's second accent, as a colour of its own rather than
     // a read of the accent, so a change of accent leaves the playhead where the
     // eye learnt to find it. Settings > Appearance can put any colour in its
     // place (theme.slint, `playhead-custom`).
-    out property <color> playhead: #cbf53f;
+    out property <color> playhead: #ffc94d;
     // Drawn on the audio clip's own dark ground, so it is a light wash of the
     // kind's hue rather than the vivid mark itself.
     out property <color> wave: #a7f0c2b3;      // 0.7 alpha
@@ -283,7 +283,7 @@ export global Dark {
     // A sample of something meant for footage - a title look on a card -
     // sits on a dark ground so a white title reads, but a grey one rather
     // than the stage's black, so the card is a card and not a hole.
-    out property <color> sample-ground: #37373a;
+    out property <color> sample-ground: #1c2235;
 
     // The sheet that covers the window behind a dialog. Dark rather than
     // tinted: it has to work over the whole editor, and any hue in it would
@@ -308,6 +308,6 @@ export global Dark {
 
     // window ground the panes float on — a shade under the darkest panel so
     // the gutters read as gaps and not as seams
-    out property <color> page: #151517;
-    out property <color> page-fg-muted: #a1a1a6;
+    out property <color> page: #020308;
+    out property <color> page-fg-muted: #9aa4c0;
 }

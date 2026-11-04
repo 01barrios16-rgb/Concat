@@ -108,6 +108,55 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// The settings a call is made with: what was saved, with the common
+    /// slips put right. A key says whose it is - Anthropic's start
+    /// `sk-ant-`, OpenAI's `sk-` - so a key pasted under the wrong provider
+    /// (Ollama, which takes none) is sent where it belongs; and a model
+    /// typed the way people say it ("opus 5.5", "Claude Sonnet 5.5") is
+    /// written the way the API names it (`claude-opus-5-5`). A model that
+    /// belongs to another provider than the one the key opens is dropped
+    /// for that provider's default.
+    pub fn resolved(&self) -> Settings {
+        let mut resolved = self.clone();
+        resolved.model = normalize_model(&self.model);
+        let key = self.api_key.trim();
+        let claude = resolved.model.starts_with("claude");
+        let openai = is_openai_model(&resolved.model);
+        let custom_address = !self.base_url.trim().is_empty()
+            && Provider::ALL
+                .iter()
+                .all(|provider| provider.default_base_url() != self.base_url.trim());
+        let wanted = if key.starts_with("sk-ant-") {
+            Some(Provider::Anthropic)
+        } else if key.starts_with("sk-")
+            && matches!(self.provider, Provider::Ollama | Provider::Anthropic)
+            && !custom_address
+        {
+            Some(Provider::Openai)
+        } else {
+            None
+        };
+        if let Some(provider) = wanted.filter(|provider| *provider != self.provider) {
+            log::info!(
+                "copilot: the key is {provider:?}'s; using it instead of {:?}",
+                self.provider
+            );
+            resolved.provider = provider;
+            if !custom_address {
+                resolved.base_url.clear();
+            }
+        }
+        let mismatched = match resolved.provider {
+            Provider::Anthropic => !resolved.model.is_empty() && !claude,
+            Provider::Openai => claude,
+            Provider::Ollama | Provider::Custom => false,
+        };
+        if mismatched || (resolved.provider == Provider::Openai && !openai && claude) {
+            resolved.model.clear();
+        }
+        resolved
+    }
+
     /// The model to ask for.
     pub fn model(&self) -> String {
         let model = self.model.trim();
@@ -153,6 +202,41 @@ pub enum Problem {
     Address,
     /// No model, and the provider has no default.
     Model,
+}
+
+/// A model named the way people say it, written the way the API names it:
+/// "opus 5.5", "Claude Opus 5.5" and "claude-opus-5.5" are all
+/// `claude-opus-5-5`. Anything else is kept as typed, trimmed.
+pub fn normalize_model(model: &str) -> String {
+    let typed = model.trim();
+    let lower = typed.to_lowercase();
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    let words: Vec<&str> = match words.first() {
+        Some(&"claude") => words[1..].to_vec(),
+        _ => words,
+    };
+    let family = words.first().copied().unwrap_or_default();
+    let numbered = words.len() >= 2
+        && words[1..]
+            .iter()
+            .all(|word| word.chars().all(|c| c.is_ascii_digit()));
+    if matches!(family, "opus" | "sonnet" | "haiku" | "fable") && numbered {
+        return format!("claude-{}", words.join("-"));
+    }
+    typed.to_owned()
+}
+
+/// Whether a model is one of OpenAI's own.
+fn is_openai_model(model: &str) -> bool {
+    let model = model.to_lowercase();
+    model.starts_with("gpt")
+        || model.starts_with("chatgpt")
+        || ["o1", "o3", "o4"]
+            .iter()
+            .any(|prefix| model.starts_with(prefix))
 }
 
 /// A tool the model may call.
@@ -210,6 +294,7 @@ pub fn chat(
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<Turn, String> {
+    let settings = &settings.resolved();
     match settings.provider {
         Provider::Anthropic => anthropic(settings, system, messages, tools),
         Provider::Openai | Provider::Ollama | Provider::Custom => {
@@ -581,6 +666,46 @@ mod tests {
         let wire = anthropic_messages(&messages);
         assert_eq!(wire.len(), 3);
         assert_eq!(wire[2]["content"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn models_said_aloud_become_api_names() {
+        assert_eq!(normalize_model("opus 5.5"), "claude-opus-5-5");
+        assert_eq!(normalize_model(" Claude Sonnet 5.5 "), "claude-sonnet-5-5");
+        assert_eq!(normalize_model("claude-haiku-5.5"), "claude-haiku-5-5");
+        assert_eq!(normalize_model("gpt-5.5"), "gpt-5.5");
+        assert_eq!(normalize_model("qwen3:8b"), "qwen3:8b");
+    }
+
+    #[test]
+    fn a_key_under_the_wrong_provider_is_sent_where_it_belongs() {
+        let settings = Settings {
+            provider: Provider::Ollama,
+            model: "opus 5.5".into(),
+            api_key: "sk-ant-api03-xyz".into(),
+            base_url: String::new(),
+        };
+        let resolved = settings.resolved();
+        assert_eq!(resolved.provider, Provider::Anthropic);
+        assert_eq!(resolved.model, "claude-opus-5-5");
+        assert_eq!(resolved.base_url(), "https://api.anthropic.com");
+
+        let openai = Settings {
+            provider: Provider::Ollama,
+            model: "opus 5.5".into(),
+            api_key: "sk-proj-abc".into(),
+            base_url: String::new(),
+        }
+        .resolved();
+        assert_eq!(openai.provider, Provider::Openai);
+        assert_eq!(openai.model(), Provider::Openai.default_model());
+
+        let local = Settings {
+            provider: Provider::Ollama,
+            ..Settings::default()
+        }
+        .resolved();
+        assert_eq!(local.provider, Provider::Ollama);
     }
 
     #[test]

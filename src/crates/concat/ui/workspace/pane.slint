@@ -18,8 +18,16 @@ export component Pane inherits Rectangle {
 
     background: Theme.panel;
     border-width: root.outlined ? 1px : 0px;
-    border-color: Theme.line;
+    // A lit edge: the accent at one corner, the palette's hairline along the
+    // sides, a violet glint at the far corner - the frame a futuristic
+    // instrument panel wears - and a soft glow of the accent around it.
+    border-color: Theme.dark
+        ? @linear-gradient(135deg, Theme.accent.with-alpha(0.55) 0%, Theme.line 30%,
+            Theme.line 70%, #a675ff80 100%)
+        : Theme.line;
     border-radius: Theme.r-lg;
+    drop-shadow-blur: Theme.dark ? 18px : 0px;
+    drop-shadow-color: Theme.accent.with-alpha(0.10);
     // Rounded corners only cut the pane's own fill; the body has to be clipped
     // to them as well or a full-bleed child squares them off again.
     clip: true;
@@ -41,14 +49,18 @@ export component PaneHeader inherits Rectangle {
     // that steps down twice across the top of the window reads as three
     // panels bolted together rather than as one shell.
     height: 52px;
-    background: Theme.raised;
+    background: Theme.dark
+        ? @linear-gradient(180deg, Theme.raised 0%, Theme.panel 100%)
+        : Theme.raised;
 
     // Hairline on the bottom edge rather than a border on the body, so the
     // line runs the full width of the pane and not the width of the content.
     Rectangle {
         y: parent.height - 1px;
         height: 1px;
-        background: Theme.line;
+        // The accent burning out along the rule, from the title's side.
+        background: @linear-gradient(90deg, Theme.accent.with-alpha(0.7) 0%,
+            Theme.accent.with-alpha(0.15) 35%, Theme.line 70%);
     }
 
     HorizontalLayout {
@@ -61,6 +73,7 @@ export component PaneHeader inherits Rectangle {
             color: Theme.fg;
             font-size: Theme.fs-lg;
             font-weight: Theme.weight-title;
+            letter-spacing: 0.6px;
             vertical-alignment: center;
         }
 
