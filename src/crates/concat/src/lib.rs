@@ -841,6 +841,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         state.dock.remove_leaf(&from_path);
     }));
     editor.on_dock_add(on_dock!(|state, kind: PaneKind| {
+        // One chat is the chat: the title bar's Copilot button opens it, and
+        // pressing it again while it is up must not stack a second one.
+        if kind == PaneKind::Copilot && state.dock.contains(PaneKind::Copilot) {
+            return;
+        }
         add_pane(&mut state, kind);
     }));
     // Not on a phone or in the compact dock: there the two seats are the
